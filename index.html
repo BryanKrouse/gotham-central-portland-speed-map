@@ -660,6 +660,160 @@ function drawBasemap() {
   // 4. Film grain
   applyFilmGrain(ctx, w, h);
 
+
+  // 4b. Orientation features (streets, bridges, labels)
+  // Drawn after grain (worn texture beneath) but before vignette (edge framing on top).
+  ctx.save();
+
+  // --- Columbia River (water body at north edge of map extent) ---
+  // Runs roughly E-W, south bank ~lat 45.645
+  const colPts = [
+    [-122.836, 45.655], [-122.750, 45.651], [-122.680, 45.647],
+    [-122.600, 45.645], [-122.520, 45.643], [-122.469, 45.641]
+  ];
+  ctx.beginPath();
+  const [cx0, cy0] = lngLatToPixel(colPts[0][0], colPts[0][1], w, h);
+  ctx.moveTo(cx0, 0); // top of canvas
+  for (const [cLng, cLat] of colPts) {
+    const [cpx, cpy] = lngLatToPixel(cLng, cLat, w, h);
+    ctx.lineTo(cpx, cpy);
+  }
+  ctx.lineTo(lngLatToPixel(colPts[colPts.length-1][0], colPts[colPts.length-1][1], w, h)[0], 0);
+  ctx.closePath();
+  ctx.fillStyle = '#162530';
+  ctx.globalAlpha = 1;
+  ctx.fill();
+
+  // --- Columbia Slough (narrow channel, NE Portland, ~lat 45.623) ---
+  const sloughPts = [
+    [-122.750, 45.624], [-122.700, 45.623], [-122.650, 45.622],
+    [-122.580, 45.621], [-122.520, 45.620]
+  ];
+  const sloughW = Math.max(3, w * 0.005) * view.scale;
+  ctx.globalAlpha = 0.7;
+  ctx.strokeStyle = '#162530';
+  ctx.lineWidth = sloughW;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  const [slX0, slY0] = lngLatToPixel(sloughPts[0][0], sloughPts[0][1], w, h);
+  ctx.moveTo(slX0, slY0);
+  for (let i = 1; i < sloughPts.length; i++) {
+    const [sx, sy] = lngLatToPixel(sloughPts[i][0], sloughPts[i][1], w, h);
+    ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+
+  // --- Key street lines ---
+  ctx.globalAlpha = 0.22;
+  ctx.strokeStyle = '#8A9BA8';
+  ctx.lineWidth = 0.8 * Math.max(1, view.scale * 0.5);
+
+  // W/E Burnside St (N-S divider, lat ~45.5237)
+  ctx.setLineDash([5, 5]);
+  const [bsX1, bsY1] = lngLatToPixel(-122.836, 45.5237, w, h);
+  const [bsX2, bsY2] = lngLatToPixel(-122.469, 45.5237, w, h);
+  ctx.beginPath(); ctx.moveTo(bsX1, bsY1); ctx.lineTo(bsX2, bsY2); ctx.stroke();
+
+  // SE Powell Blvd (lat ~45.4975)
+  const [pwX1, pwY1] = lngLatToPixel(-122.836, 45.4975, w, h);
+  const [pwX2, pwY2] = lngLatToPixel(-122.469, 45.4975, w, h);
+  ctx.globalAlpha = 0.13;
+  ctx.beginPath(); ctx.moveTo(pwX1, pwY1); ctx.lineTo(pwX2, pwY2); ctx.stroke();
+
+  // I-84 / US-30 (E-W freeway, E side only, lat ~45.531)
+  const [i84X1, i84Y1] = lngLatToPixel(-122.665, 45.5305, w, h);
+  const [i84X2, i84Y2] = lngLatToPixel(-122.469, 45.5305, w, h);
+  ctx.globalAlpha = 0.16;
+  ctx.setLineDash([3, 6]);
+  ctx.beginPath(); ctx.moveTo(i84X1, i84Y1); ctx.lineTo(i84X2, i84Y2); ctx.stroke();
+
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // --- Willamette River bridges ---
+  // Thin horizontal ticks where bridges cross the river (W bank to E bank)
+  const bridges = [
+    { name: 'BROADWAY BR', lat: 45.535, wLng: -122.678, eLng: -122.668 },
+    { name: 'STEEL BR', lat: 45.530, wLng: -122.677, eLng: -122.668 },
+    { name: 'BURNSIDE BR', lat: 45.524, wLng: -122.676, eLng: -122.665 },
+    { name: 'MORRISON BR', lat: 45.519, wLng: -122.674, eLng: -122.663 },
+    { name: 'HAWTHORNE BR', lat: 45.511, wLng: -122.671, eLng: -122.659 },
+    { name: 'ROSS ISLAND BR', lat: 45.496, wLng: -122.671, eLng: -122.659 },
+  ];
+  ctx.strokeStyle = '#7A9BAA';
+  ctx.lineWidth = 1.5 * Math.max(1, view.scale * 0.5);
+  ctx.globalAlpha = 0.45;
+  for (const br of bridges) {
+    const [bx1, by1] = lngLatToPixel(br.wLng, br.lat, w, h);
+    const [bx2, by2] = lngLatToPixel(br.eLng, br.lat, w, h);
+    ctx.beginPath(); ctx.moveTo(bx1, by1); ctx.lineTo(bx2, by2); ctx.stroke();
+  }
+
+  // --- Text labels ---
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  function mapLabel(text, lng, lat, sizePx, alpha, color) {
+    const [lx, ly] = lngLatToPixel(lng, lat, w, h);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.font = sizePx + 'px "IBM Plex Mono", "Courier New", monospace';
+    ctx.fillText(text, lx, ly);
+  }
+
+  // Willamette River — rotated to follow the river angle
+  const [rwA_x, rwA_y] = lngLatToPixel(-122.745, 45.560, w, h);
+  const [rwB_x, rwB_y] = lngLatToPixel(-122.710, 45.508, w, h);
+  const riverAngle = Math.atan2(rwB_y - rwA_y, rwB_x - rwA_x);
+  const [rwM_x, rwM_y] = lngLatToPixel(-122.728, 45.534, w, h);
+  ctx.save();
+  ctx.translate(rwM_x, rwM_y);
+  ctx.rotate(riverAngle);
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = '#7AAEC0';
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('WILLAMETTE RIVER', 0, 0);
+  ctx.restore();
+
+  // Columbia River label
+  mapLabel('COLUMBIA RIVER', -122.660, 45.649, 9, 0.40, '#7AAEC0');
+
+  // Columbia Slough label
+  mapLabel('COLUMBIA SLOUGH', -122.640, 45.624, 8, 0.30, '#6A9BAA');
+
+  // Neighborhood / district area labels
+  const areas = [
+    { name: 'NORTH PORTLAND',  lng: -122.710, lat: 45.593 },
+    { name: 'NORTHEAST',       lng: -122.608, lat: 45.563 },
+    { name: 'NORTHWEST',       lng: -122.726, lat: 45.538 },
+    { name: 'DOWNTOWN',        lng: -122.679, lat: 45.519 },
+    { name: 'SOUTHEAST',       lng: -122.615, lat: 45.491 },
+    { name: 'SOUTHWEST',       lng: -122.712, lat: 45.472 },
+    { name: 'EAST PORTLAND',   lng: -122.525, lat: 45.527 },
+  ];
+  for (const a of areas) {
+    mapLabel(a.name, a.lng, a.lat, 9, 0.25, '#B6BDC3');
+  }
+
+  // Key street labels
+  mapLabel('BURNSIDE ST', -122.790, 45.527, 8, 0.30, '#A0ACBA');
+  mapLabel('SE POWELL BLVD', -122.790, 45.501, 8, 0.22, '#A0ACBA');
+  mapLabel('I-84', -122.560, 45.535, 8, 0.28, '#A0ACBA');
+
+  // Bridge labels (small, just east of river)
+  ctx.textAlign = 'left';
+  for (const br of bridges) {
+    const [lx, ly] = lngLatToPixel(br.eLng + 0.002, br.lat, w, h);
+    ctx.globalAlpha = 0.30;
+    ctx.fillStyle = '#8AABB8';
+    ctx.font = '7px "IBM Plex Mono", monospace';
+    ctx.fillText(br.name, lx, ly);
+  }
+
+  ctx.restore();
+
   // 5. Blueprint overlay
   ctx.save();
   // Minor blueprint
