@@ -4,19 +4,29 @@
 **Map application:** Portland speed observation web map  
 **Purpose:** Create an original, interactive point-based traffic speed map that uses a Gotham Central–inspired procedural visual language while reporting transportation variables without crime or risk terminology.  
 **Primary data variables:** `PostedSpeed`, `PctOverPosted`, `PctOverPosted10`  
-**Schema version:** 2.0 — revised from v1 with cold-blue palette corrections, darker water, and concrete texture implementation spec.
+**Schema version:** 3.0 — revised from v2 with data cleaning, manual classification breaks, zoom/pan interaction, cursor behavior, and Portland orientation features.
+
+---
+
+## Revision Notes (v2 → v3)
+
+The following changes were made from v2 based on implementation review and user testing:
+
+1. **Outlier records removed** — PostedSpeed values of 2, 3, 230, and 10316 mph are data errors and must be filtered before rendering. Valid PostedSpeed range is 5–55 mph. Filter rule: exclude any record where `PostedSpeed < 5` or `PostedSpeed > 100`.
+2. **Classification switched from quantile to manual breaks** — Quantile breaks produced unintuitive legend ranges (e.g., "2–20 mph"). Manual breaks are now specified per variable and reflect real-world street typology and percentage thresholds. See Section 4.
+3. **Zoom and pan added** — Mouse wheel zooms toward the cursor position; click-and-drag pans the map. Double-click resets to full Portland extent. All interactions attach to the map container div, not the canvas elements. See Section 14.
+4. **Cursor behavior specified** — The map container shows a grab-hand cursor by default. When the cursor hovers within 10px of a data point, it switches to the default arrow cursor to signal clickability. The grabbing cursor appears during active drag.
+5. **Portland orientation features added to basemap** — The procedural basemap now includes geographic reference features that allow readers to identify their location within Portland. See Section 7b.
 
 ---
 
 ## Revision Notes (v1 → v2)
 
-The following changes were made from the original schema based on design review:
-
 1. **Water color darkened** — `#2A4351` replaced with `#162530`. Gotham's harbor reads as near-black industrial water, not decorative slate.
 2. **Building mass shifted cold** — `#2A2F34` (Concrete Gray) replaced with `#252B31`. Secondary panels and block texture now carry a blue-gray bias instead of warm neutral.
 3. **Road framework shifted cold** — Asphalt major roads `#3E464F` replaced with `#3A434D`; Side Street minor roads `#2F353B` replaced with `#2B3239`. The urban grid should feel cold and institutional, not warm-gray.
 4. **Title typography reordered** — `Libre Baskerville` promoted to primary title font. `Cinzel` demoted to alternate. Libre Baskerville reads as worn municipal authority; Cinzel reads as elevated classical, which is slightly too decorative for a precinct document.
-5. **Texture implementation specified** — Section 7 now includes a concrete canvas noise implementation pattern with pixel-level instructions. A vague opacity note at 3–6% is insufficient to achieve the worn, institutional register that distinguishes this map from a clean dark dashboard.
+5. **Texture implementation specified** — Section 7a now includes a concrete canvas noise implementation pattern with pixel-level instructions.
 6. **CSS token naming noted** — Token names (`--crime`, `--police`, `--investigation`) are flavor identifiers for the palette only and must not appear in any visible UI text, legend labels, or popup content.
 
 ---
@@ -80,51 +90,91 @@ The visual tone comes from cold blue-gray neutrals, low contrast, hard-edged pan
 | Border Steel | `#48505A` | Panel and popup borders |
 | Ink Black | `#050607` | Symbol outlines |
 
+### Basemap Annotation Colors
+
+Additional colors used for orientation feature labels and line work on the basemap:
+
+| Use | Hex |
+|---|---:|
+| River / water labels | `#7AAEC0` |
+| Bridge line strokes | `#7A9BAA` |
+| Bridge name labels | `#8AABB8` |
+| Street reference lines | `#8A9BA8` |
+| Street name labels | `#A0ACBA` |
+| Area / district labels | `#B6BDC3` |
+| Slough / minor water | `#6A9BAA` |
+
+All annotation colors are deliberately muted so they read as map annotation, not commercial cartography.
+
 ### Cold Register Note
 
 The palette should read as cold throughout. Warm gray tones will undermine the Gotham institutional atmosphere. When in doubt between a warm-neutral and a cold-neutral at any hex value, choose the cold option.
 
 ---
 
-## 4. Variable Color Ramps
+## 4. Variable Color Ramps and Classification
 
 The map uses Gotham Central palette colors for the traffic variables. These colors represent **reported value classes**, not risk categories.
 
-### PostedSpeed Ramp
+### Data Cleaning — Required Before Classification
 
-Use for posted speed limits in miles per hour.
+Filter out PostedSpeed data errors before computing any statistics or rendering:
 
-| Class | Meaning | Color |
-|---|---|---:|
-| 1 | Lowest posted speeds | `#4D604E` |
-| 2 | Low-to-moderate speeds | `#536C82` |
-| 3 | Moderate speeds | `#B98A34` |
-| 4 | Higher posted speeds | `#C8A44B` |
-| 5 | Highest posted speeds | `#8A2A2A` |
+```javascript
+const DATA = RAW_DATA.filter(d => d.ps >= 5 && d.ps <= 100);
+```
 
-### PctOverPosted Ramp
+Known outliers in the Portland dataset: 2, 3, 230, and 10316 mph. These are instrument or entry errors.
 
-Use for the percentage of recorded vehicles traveling faster than the posted speed.
+### Manual Classification Breaks
 
-| Class | Meaning | Color |
-|---|---|---:|
-| 1 | Lowest percentages | `#4D604E` |
-| 2 | Below-middle percentages | `#536C82` |
-| 3 | Middle percentages | `#B98A34` |
-| 4 | High percentages | `#C8A44B` |
-| 5 | Highest percentages | `#8A2A2A` |
+Use fixed manual breaks per variable. Do not use quantile or equal-interval breaks computed at runtime — they produce unintuitive legend labels that readers cannot interpret without explanation.
 
-### PctOverPosted10 Ramp
+```javascript
+const MANUAL_BREAKS = {
+  ps:    [5, 20, 25, 30, 40, 55],
+  pop:   [0, 20, 40, 60, 80, 100],
+  pop10: [0, 5, 15, 30, 50, 97]
+};
+```
 
-Use for the percentage of recorded vehicles traveling at least 10 mph above the posted speed.
+### Legend Labels
 
-| Class | Meaning | Color |
-|---|---|---:|
-| 1 | Lowest percentages | `#4D604E` |
-| 2 | Below-middle percentages | `#536C82` |
-| 3 | Middle percentages | `#B98A34` |
-| 4 | High percentages | `#C8A44B` |
-| 5 | Highest percentages | `#8A2A2A` |
+```javascript
+const BREAK_LABELS = {
+  ps:    ['5-20 mph', '20-25 mph', '25-30 mph', '30-40 mph', '40-55 mph'],
+  pop:   ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%'],
+  pop10: ['0-5%', '5-15%', '15-30%', '30-50%', '50-97%']
+};
+```
+
+### PostedSpeed Break Rationale
+
+| Range | Street typology |
+|---|---|
+| 5–20 mph | School zones, parking lots, very slow local streets |
+| 20–25 mph | Residential neighborhood streets |
+| 25–30 mph | Local arterials and collector streets |
+| 30–40 mph | Major arterials |
+| 40–55 mph | Expressways and highways |
+
+### PctOverPosted Break Rationale
+
+Equal 20-percentage-point intervals. Each class represents a clearly readable share of vehicles exceeding the posted limit.
+
+### PctOverPosted10 Break Rationale
+
+Asymmetric intervals weighted toward the lower end, where most observations cluster. The 50–97% class captures rare locations where the majority of vehicles are traveling 10+ mph over the limit.
+
+### Color Ramp (same for all three variables)
+
+| Class | Color |
+|---|---:|
+| 1 (lowest) | `#4D604E` |
+| 2 | `#536C82` |
+| 3 | `#B98A34` |
+| 4 | `#C8A44B` |
+| 5 (highest) | `#8A2A2A` |
 
 ### Color Behavior Rules
 
@@ -202,6 +252,7 @@ Use for:
 - metadata
 - variable names
 - histogram ranges
+- all basemap annotation labels
 
 ---
 
@@ -249,10 +300,11 @@ The map uses a custom canvas-style basemap rather than relying on an external ti
 ### Basemap Characteristics
 
 - cold matte land field with blue-gray bias
-- near-black industrial water
+- near-black industrial water bodies (Willamette River, Columbia River, Columbia Slough)
 - cold road and grid framework
 - faint block texture in cold concrete
 - worn paper grain and subtle blueprint-style grid
+- geographic orientation features: water bodies, bridges, key streets, district labels
 - no bright commercial labels
 - no external basemap dependency required
 - city extent derived from the data bounds
@@ -275,11 +327,9 @@ Opacity should remain low. Grid should support orientation without pretending to
 
 ## 7a. Texture Implementation
 
-This section replaces the vague "3–6% opacity paper grain" note from v1 with a concrete canvas implementation pattern. Without pixel-level specification, the texture will render imperceptibly and the map will read as a clean modern dark dashboard rather than a worn municipal plate.
-
 ### Required Texture Layers
 
-Apply in order, composited over the basemap before data points are drawn.
+Apply in this order, composited over the basemap before data points are drawn.
 
 #### Layer 1 — Base Noise Grain
 
@@ -288,11 +338,10 @@ function applyFilmGrain(ctx, width, height) {
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;
   for (let i = 0; i < data.length; i += 4) {
-    const noise = (Math.random() - 0.5) * 18; // grain amplitude: 14–22 recommended
+    const noise = (Math.random() - 0.5) * 18; // grain amplitude: 14-22 recommended
     data[i]     = Math.min(255, Math.max(0, data[i]     + noise));
     data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
     data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
-    // alpha unchanged
   }
   ctx.putImageData(imageData, 0, 0);
 }
@@ -305,8 +354,7 @@ Apply after the land fill and before roads. This adds per-pixel randomness that 
 ```javascript
 function applyBlueprintGrid(ctx, width, height) {
   ctx.save();
-  // Major grid lines
-  ctx.strokeStyle = 'rgba(83, 108, 130, 0.06)'; // Patrol Blue at very low alpha
+  ctx.strokeStyle = 'rgba(83, 108, 130, 0.06)';
   ctx.lineWidth = 1;
   const majorSpacing = 80;
   for (let x = 0; x < width; x += majorSpacing) {
@@ -315,7 +363,6 @@ function applyBlueprintGrid(ctx, width, height) {
   for (let y = 0; y < height; y += majorSpacing) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
   }
-  // Minor grid lines
   ctx.strokeStyle = 'rgba(83, 108, 130, 0.03)';
   const minorSpacing = 20;
   for (let x = 0; x < width; x += minorSpacing) {
@@ -343,14 +390,90 @@ function applyVignette(ctx, width, height) {
 }
 ```
 
-Apply last, after data points are drawn. The vignette reinforces the plate/document framing and darkens the map edges so the eye remains on the data field.
+Apply last, after orientation features and data points are drawn.
 
 ### Texture Calibration Notes
 
-- Grain amplitude of 14–22 is correct for this map scale. Below 12 is invisible at typical monitor brightness. Above 26 obscures point patterns.
-- Blueprint grid at 6% alpha for major lines, 3% for minor lines. These values are intentionally subtle — they suggest municipal structure without competing with data symbols.
-- Do not apply CSS `filter: noise()` or `backdrop-filter` as a substitute. Canvas pixel-level noise renders at screen resolution and behaves correctly on high-DPI displays; CSS filter results vary by browser.
-- Regenerate grain on each full redraw, not each frame. Static grain is correct for a printed-document aesthetic.
+- Grain amplitude of 14–22 is correct for this map scale.
+- Blueprint grid at 6% alpha for major lines, 3% for minor lines.
+- Do not apply CSS `filter: noise()` as a substitute. Canvas pixel-level noise renders correctly on high-DPI displays; CSS filter results vary by browser.
+- Regenerate grain on each full redraw, not each frame.
+
+---
+
+## 7b. Basemap Orientation Features
+
+Geographic reference features must be drawn on the basemap so readers can identify their location within Portland. These features draw after film grain (so grain texture underlies them) and before the vignette (so edge darkening frames them).
+
+All features use `lngLatToPixel()` for positioning and therefore move and scale correctly with zoom and pan.
+
+### Water Bodies
+
+#### Willamette River
+Drawn as a sinuous polygon approximating the river course through Portland. The river runs roughly NNW to SSE. Color: `#162530`.
+
+#### Columbia River
+Drawn as a filled water body at the north edge of the map extent (south bank approximately lat 45.645–45.651). The Columbia marks Portland's northern boundary. Color: `#162530`.
+
+#### Columbia Slough
+Drawn as a thick stroked line (not a polygon) running roughly E-W through NE Portland at approximately lat 45.621–45.624. Represents the narrow tidal channel parallel to the Columbia. Color: `#162530`, alpha 0.7.
+
+### Water Labels
+
+- **WILLAMETTE RIVER** — drawn rotated to follow the river's NNW-SSE angle. Center approximately lng -122.728, lat 45.534. Color: `#7AAEC0`, alpha 0.45, 10px IBM Plex Mono.
+- **COLUMBIA RIVER** — horizontal label near top of map. Approximately lng -122.660, lat 45.649. Color: `#7AAEC0`, alpha 0.40, 9px IBM Plex Mono.
+- **COLUMBIA SLOUGH** — horizontal label in NE Portland. Approximately lng -122.640, lat 45.624. Color: `#6A9BAA`, alpha 0.30, 8px IBM Plex Mono.
+
+### Bridge Crossings
+
+Six Willamette River bridges drawn as thin horizontal tick marks. Each connects approximate west-bank to east-bank coordinates. Color: `#7A9BAA`, alpha 0.45.
+
+| Bridge | Approximate lat | W bank lng | E bank lng |
+|---|---|---|---|
+| Broadway Bridge | 45.535 | -122.678 | -122.668 |
+| Steel Bridge | 45.530 | -122.677 | -122.668 |
+| Burnside Bridge | 45.524 | -122.676 | -122.665 |
+| Morrison Bridge | 45.519 | -122.674 | -122.663 |
+| Hawthorne Bridge | 45.511 | -122.671 | -122.659 |
+| Ross Island Bridge | 45.496 | -122.671 | -122.659 |
+
+Bridge name labels drawn in 7px IBM Plex Mono, `#8AABB8`, alpha 0.30, just east of each bridge.
+
+### Street Reference Lines
+
+Three key streets drawn as dashed lines to reinforce orientation. Opacity kept low — these are reference cues, not road data.
+
+| Street | Geometry | Color | Alpha | Dash |
+|---|---|---|---|---|
+| Burnside Street | E-W line at lat 45.5237, full map width | `#8A9BA8` | 0.22 | 5, 5 |
+| SE Powell Blvd | E-W line at lat 45.4975, full map width | `#8A9BA8` | 0.13 | 5, 5 |
+| I-84 | E-W line at lat 45.5305, east of river only | `#8A9BA8` | 0.16 | 3, 6 |
+
+Street labels drawn in 8px IBM Plex Mono, `#A0ACBA`, alpha 0.22–0.30.
+
+**Burnside Street** is the most important reference line. It is Portland's official North/South dividing street and should be the most visible of the three.
+
+### District Area Labels
+
+Seven muted uppercase area labels positioned at district centroids. Font: 9px IBM Plex Mono, color `#B6BDC3`, alpha 0.25.
+
+| Label | Approximate lng | Approximate lat |
+|---|---|---|
+| NORTH PORTLAND | -122.710 | 45.593 |
+| NORTHEAST | -122.608 | 45.563 |
+| NORTHWEST | -122.726 | 45.538 |
+| DOWNTOWN | -122.679 | 45.519 |
+| SOUTHEAST | -122.615 | 45.491 |
+| SOUTHWEST | -122.712 | 45.472 |
+| EAST PORTLAND | -122.525 | 45.527 |
+
+### Orientation Feature Rules
+
+- All orientation features must be legible at default zoom (scale 1.0) without overpowering the data point layer.
+- All features use `lngLatToPixel()` for position so they pan and scale with map navigation.
+- Bridge line stroke width and slough width should scale with `view.scale` so they remain proportionate at higher zoom levels.
+- Labels use a fixed font size regardless of zoom level (labels do not scale with zoom — they move with pan only).
+- Opacity values are calibrated to be secondary to the data layer. If labels compete with data point readability, reduce opacity rather than remove the feature.
 
 ---
 
@@ -387,8 +510,8 @@ Use:
 
 Selected point:
 
-- larger radius
-- amber or patrol-blue outline
+- larger radius (8px)
+- amber outline (`#B98A34`)
 - slightly stronger stroke
 - no pulsing animation
 
@@ -437,7 +560,7 @@ The legend should describe the active variable only.
 
 - active variable name
 - 5 color classes
-- value ranges
+- human-readable value ranges from `BREAK_LABELS` (not computed at runtime)
 - statement that colors represent reported values
 - no risk wording
 
@@ -477,11 +600,6 @@ When a bar is clicked, display a readout containing:
 - percentage of active-variable records
 - active variable name
 
-Optional behavior:
-
-- temporarily emphasize mapped points that fall in the selected bin
-- keep the readout persistent until another bar is clicked
-
 ### Required Readout Language
 
 Use neutral reporting language such as:
@@ -490,16 +608,7 @@ Use neutral reporting language such as:
 > Records in range: 1,245  
 > Share of valid observations: 6.4%
 
-Avoid:
-
-- danger
-- risk
-- critical
-- alert
-- violent
-- crime
-
-unless the underlying dataset is actually crime data.
+Avoid: danger, risk, critical, alert, violent, crime — unless the underlying dataset is actually crime data.
 
 ---
 
@@ -525,31 +634,13 @@ Popups should resemble compact observation notes.
 
 ### Fields to Exclude
 
-Do not show:
-
-- latitude
-- longitude
-- raw projected coordinates
-- internal geometry fields
-- unnecessary technical fields
+Do not show: latitude, longitude, raw projected coordinates, internal geometry fields, unnecessary technical fields.
 
 ### Popup Tone
 
-Use:
+Use: "Observation Record", "Traffic count location", "Reported value"
 
-- "Observation Record"
-- "Traffic count location"
-- "Reported value"
-
-Avoid:
-
-- incident
-- crime
-- suspect
-- homicide
-- emergency
-
-unless the data actually supports those terms.
+Avoid: incident, crime, suspect, homicide, emergency — unless the data actually supports those terms.
 
 ---
 
@@ -566,12 +657,74 @@ Interaction should feel investigative but not playful.
 - histogram bars are clickable
 - map points are clickable
 - selected popup displays traffic values
+- **mouse wheel zooms toward cursor position** (range: 0.4x to 24x)
+- **click and drag pans the map**
+- **double-click resets view** to full Portland extent (scale 1.0, offset 0,0)
+
+### Zoom and Pan Implementation
+
+All zoom and pan events must attach to the **map container div**, not the canvas elements. Canvas elements must have `pointer-events: none`. The map container must have `touch-action: none` and `user-select: none` to prevent browser scroll interception.
+
+```javascript
+// View state
+let view = { scale: 1, offsetX: 0, offsetY: 0 };
+
+// Zoom toward cursor
+mapContainer.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  const rect = mapContainer.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const w = dataCanvas.width;
+  const h = dataCanvas.height;
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  const newScale = Math.max(0.4, Math.min(24, view.scale * factor));
+  const cx = w / 2, cy = h / 2;
+  view.offsetX = mx - ((mx - cx - view.offsetX) / view.scale) * newScale - cx;
+  view.offsetY = my - ((my - cy - view.offsetY) / view.scale) * newScale - cy;
+  view.scale = newScale;
+  drawBasemap(); drawData();
+}, { passive: false });
+```
+
+The `lngLatToPixel` function must apply the view transform so all canvas-drawn elements (basemap, orientation features, data points) respond to zoom and pan:
+
+```javascript
+function lngLatToPixel(lng, lat, width, height) {
+  const bx = (lng - BOUNDS.minLng) / (BOUNDS.maxLng - BOUNDS.minLng) * width;
+  const by = (1 - (lat - BOUNDS.minLat) / (BOUNDS.maxLat - BOUNDS.minLat)) * height;
+  const cx = width / 2, cy = height / 2;
+  return [
+    (bx - cx) * view.scale + cx + view.offsetX,
+    (by - cy) * view.scale + cy + view.offsetY
+  ];
+}
+```
+
+### Cursor Behavior
+
+The map container uses `cursor: grab` by default. On `mousemove`, check proximity to data points. If within 10px of any point, switch to `cursor: default` (arrow) to signal that clicking will open the popup. Restore to `grab` when not near a point. Apply `cursor: grabbing` class during active drag.
+
+```javascript
+mapContainer.addEventListener('mousemove', function(e) {
+  if (isDragging) return;
+  const rect = mapContainer.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const w = dataCanvas.width, h = dataCanvas.height;
+  let hit = false;
+  for (let i = 0; i < DATA.length; i++) {
+    const [px, py] = lngLatToPixel(DATA[i].lng, DATA[i].lat, w, h);
+    if ((px - mx) ** 2 + (py - my) ** 2 < 100) { hit = true; break; }
+  }
+  mapContainer.style.cursor = hit ? 'default' : '';
+});
+```
 
 ### Optional Interactions
 
 - search by location description
 - filter by histogram bin
-- reset selection
 - show top observed values table
 - export selected observations
 
@@ -581,7 +734,6 @@ Interaction should feel investigative but not playful.
 - glowing animations
 - spinning loaders
 - confetti effects
-- cartoon hover states
 - unnecessary transition effects
 
 ---
@@ -593,41 +745,41 @@ Do **not** include:
 - scale bar
 - north arrow
 
-These were intentionally removed because the user requested a cleaner procedural dashboard.
+These were intentionally removed for a cleaner procedural dashboard aesthetic.
 
 ---
 
 ## 16. CSS Design Tokens
 
-Token names ending in `--crime`, `--police`, and `--investigation` are palette flavor identifiers only. They must not appear in any visible UI text, legend labels, popup content, or ARIA labels. They are internal naming conventions for the color system.
+Token names ending in `--crime`, `--police`, and `--investigation` are palette flavor identifiers only. They must not appear in any visible UI text, legend labels, popup content, or ARIA labels.
 
 ```css
 :root {
   /* Background and surface */
   --bg:               #101214;
   --land:             #181B1F;
-  --building:         #252B31;   /* v2: cooler blue-gray, was #2A2F34 */
-  --road-major:       #3A434D;   /* v2: cold bias, was #3E464F */
-  --road-minor:       #2B3239;   /* v2: cold bias, was #2F353B */
-  --water:            #162530;   /* v2: near-black industrial harbor, was #2A4351 */
+  --building:         #252B31;
+  --road-major:       #3A434D;
+  --road-minor:       #2B3239;
+  --water:            #162530;
 
   /* Text */
   --text:             #ECE8DF;
   --text-secondary:   #B6BDC3;
 
   /* UI states */
-  --police:           #536C82;   /* palette token only — not for visible labels */
+  --police:           #536C82;   /* palette token only */
   --border-color:     #48505A;
   --ink:              #050607;
 
   /* Data emphasis */
   --amber:            #B98A34;
-  --crime:            #8A2A2A;   /* palette token only — not for visible labels */
-  --investigation:    #C8A44B;   /* palette token only — not for visible labels */
+  --crime:            #8A2A2A;   /* palette token only */
+  --investigation:    #C8A44B;   /* palette token only */
   --park:             #4D604E;
 
   /* Typography */
-  --font-title:  "Libre Baskerville", "Cormorant Garamond", Georgia, serif; /* v2: LB primary */
+  --font-title:  "Libre Baskerville", "Cormorant Garamond", Georgia, serif;
   --font-ui:     "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
   --font-body:   "IBM Plex Sans", Inter, sans-serif;
   --font-mono:   "IBM Plex Mono", "Roboto Mono", monospace;
@@ -638,19 +790,28 @@ Token names ending in `--crime`, `--police`, and `--investigation` are palette f
   --panel-padding:   12px 14px;
   --texture-opacity: 0.05;
 }
+
+/* Map container — receives all interaction events */
+#map-container {
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+#map-container.dragging { cursor: grabbing; }
+
+/* Canvases are non-interactive — events pass through to container */
+#basemap-canvas, #data-canvas {
+  pointer-events: none;
+}
 ```
 
 ---
 
 ## 17. HTML Component Requirements
 
-A reproducible implementation should include:
-
 ```text
 <header class="atlas-header">
-  plate label
-  map title
-  subtitle
+  plate label / map title / subtitle
 </header>
 
 <aside class="case-panel">
@@ -663,22 +824,19 @@ A reproducible implementation should include:
   source block
 </aside>
 
-<main class="map-stage">
-  canvas basemap
-  canvas texture (grain + grid + vignette — see Section 7a)
-  canvas data layer
-  popup layer
+<main id="map-container">
+  canvas#basemap-canvas  (basemap + orientation features + texture)
+  canvas#data-canvas     (data points)
+  div#popup              (observation record popup)
 </main>
 ```
 
 ### Required Metadata
 
-Include metadata in the HTML:
-
 ```html
 <meta name="description" content="Interactive Portland traffic speed observation map using Gotham Central procedural cartography.">
 <meta name="keywords" content="traffic speed, Portland, canvas map, procedural cartography, transportation observations">
-<meta name="orig_prompt" content="Using the Gotham Central web mapping cartography design schema v2, create an HTML interactive map using the Portland data and the three variables.">
+<meta name="orig_prompt" content="Using the Gotham Central web mapping cartography design schema v3, create an HTML interactive map using the Portland data and the three variables.">
 ```
 
 ---
@@ -687,13 +845,24 @@ Include metadata in the HTML:
 
 ### Data Handling
 
-The implementation should:
+```javascript
+// 1. Embed raw data as JSON
+const RAW_DATA = [...]; // full dataset
 
-- embed the CSV or preprocessed JSON in the HTML for single-file operation
-- parse `PostedSpeed`, `PctOverPosted`, and `PctOverPosted10` as numbers
-- exclude records with invalid coordinates from rendering
-- preserve original values for popups
-- compute statistics dynamically from valid active-variable values
+// 2. Filter outliers
+const DATA = RAW_DATA.filter(d => d.ps >= 5 && d.ps <= 100);
+
+// 3. Use DATA (not RAW_DATA) for all rendering and statistics
+```
+
+- Parse `PostedSpeed`, `PctOverPosted`, and `PctOverPosted10` as numbers.
+- Exclude records with invalid coordinates from rendering.
+- Preserve original values for popups.
+- Compute statistics dynamically from valid filtered values.
+
+### Classification
+
+Use `MANUAL_BREAKS` and `BREAK_LABELS` (see Section 4). Do not compute breaks from data at runtime.
 
 ### Coordinate Handling
 
@@ -704,40 +873,43 @@ If input coordinates are projected Web Mercator meters:
 - maintain aspect ratio
 - pad extent so symbols are not clipped
 
-### Rendering
+All coordinate projection must pass through `lngLatToPixel()` which applies the view transform (zoom/pan state).
 
-Use canvas when point counts exceed several thousand records.
+### Rendering Order
 
 Canvas layer should render in this order:
 
-1. Procedural basemap (land, water, roads)
-2. Texture layers (grain, blueprint grid) — see Section 7a
-3. Point observations
-4. Selection highlight
-5. Vignette — see Section 7a
+1. Land fill
+2. Willamette River polygon
+3. Columbia River water body
+4. Columbia Slough stroke
+5. Procedural road grid
+6. Film grain (pixel noise)
+7. Orientation features: bridge ticks, street lines, labels, river labels, district labels
+8. Blueprint grid overlay
+9. Vignette
+10. Data point layer (separate canvas)
 
-This draw order ensures texture sits between basemap and data, and vignette frames the completed map field.
+### Performance
+
+Use canvas rendering for large point datasets (this dataset has ~19,300 valid records after filtering). Do not use DOM or Leaflet marker objects.
 
 ---
 
 ## 19. Accessibility
 
-The map should remain usable without relying only on color.
-
-Recommended support:
-
-- value ranges in legend
-- numeric popup values
-- histogram count labels or readout
-- high-contrast text
-- no hover-only meaning
-- keyboard-accessible controls where possible
+- Value ranges in legend (human-readable, from `BREAK_LABELS`)
+- Numeric popup values
+- Histogram count labels or readout
+- High-contrast text
+- No hover-only meaning
+- Keyboard-accessible controls where possible
 
 ---
 
 ## 20. Agent Prompt
 
-Create a single-file interactive HTML web map using Portland traffic speed count data and the variables `PostedSpeed`, `PctOverPosted`, and `PctOverPosted10`. Use an original Gotham Central police-procedural cartographic style with a cold blue-gray palette, near-black industrial water, and a worn institutional atmosphere. Report the data as transportation observations rather than crime or risk. Use a dark matte self-contained basemap with canvas-rendered pixel-level grain noise, a blueprint grid overlay at low opacity, and a vignette edge-darkening layer. Use muted institutional colors with cold bias throughout, square information panels, compact typography with Libre Baskerville as the title font, and heavy outlined circular symbols. The map must include persistent definitions, active-variable legend, dynamic summary table, clickable histogram bars with a readout, and compact popups that show the three traffic variables but not latitude or longitude. Do not include a scale bar or north arrow. Avoid superhero imagery, neon cyberpunk, comic-book effects, rounded cards, consumer dashboard styling, warm neutral grays, and decorative water colors.
+Create a single-file interactive HTML web map using Portland traffic speed count data and the variables `PostedSpeed`, `PctOverPosted`, and `PctOverPosted10`. Filter out PostedSpeed outliers (values below 5 or above 100 mph) before rendering. Use manual classification breaks (not quantile): PostedSpeed at 5/20/25/30/40/55, PctOverPosted at 0/20/40/60/80/100, PctOverPosted10 at 0/5/15/30/50/97. Use an original Gotham Central police-procedural cartographic style with a cold blue-gray palette, near-black industrial water, and a worn institutional atmosphere. Report the data as transportation observations rather than crime or risk. Use a dark matte self-contained basemap with canvas-rendered pixel-level grain noise, a blueprint grid overlay at low opacity, and a vignette edge-darkening layer. Add geographic orientation features to the basemap: Columbia River water body at the north edge, Columbia Slough channel in NE Portland, Willamette River label rotated to follow the river angle, six bridge crossings as tick marks with labels, dashed reference lines for Burnside Street and two other key streets, and seven district area labels in muted monospace. Add mouse-wheel zoom (toward cursor) and click-drag pan, with double-click to reset. Show a grab cursor on the map; switch to an arrow cursor when hovering over a data point. Attach all interaction events to the map container div, not the canvas elements. Use muted institutional colors throughout, square information panels, compact typography with Libre Baskerville as the title font, and heavy outlined circular symbols. Include persistent definitions, active-variable legend with human-readable labels, dynamic summary table, clickable histogram bars with a readout, and compact popups showing the three traffic variables but not coordinates. Do not include a scale bar or north arrow. Avoid superhero imagery, neon cyberpunk, comic-book effects, rounded cards, consumer dashboard styling, warm neutral grays, and decorative water colors.
 
 ---
 
@@ -748,10 +920,10 @@ Create a single-file interactive HTML web map using Portland traffic speed count
 3. Do not show latitude or longitude in popups.
 4. Rename "Max" as "Highest observed value."
 5. Make histogram bars clickable and provide range/count details.
-6. Keep the map self-contained if external basemaps are unreliable.
+6. Keep the map self-contained — no external basemap dependency.
 7. Use canvas rendering for large point datasets.
 8. Use square panels only.
-9. Keep animations minimal.
+9. Keep animations minimal — no transitions, no pulsing.
 10. Preserve analytical clarity over atmosphere.
 11. Do not include scale bar or north arrow.
 12. Avoid superhero branding or protected imagery.
@@ -759,6 +931,10 @@ Create a single-file interactive HTML web map using Portland traffic speed count
 14. All gray tones must carry a cold blue bias, not warm neutral.
 15. Apply canvas pixel-level grain noise per Section 7a — CSS filter substitutes are not acceptable.
 16. CSS palette token names (`--crime`, `--police`, `--investigation`) must never appear in visible UI text.
+17. Filter PostedSpeed outliers before any rendering or statistics — use `DATA`, not `RAW_DATA`.
+18. Use manual classification breaks from `MANUAL_BREAKS` — do not compute breaks at runtime.
+19. Attach all map interaction events to the map container div — canvas elements must have `pointer-events: none`.
+20. Basemap must include Portland orientation features per Section 7b — the map must be readable without external context.
 
 ---
 
@@ -770,21 +946,27 @@ A successful map should satisfy the following:
 - The data renders without requiring a local server.
 - The basemap and data are visible even without external tile services.
 - Symbol colors match the Gotham Central color palette.
-- The active variable is clear.
-- The legend matches the selected variable.
+- The active variable is clear and the legend shows human-readable ranges.
+- PostedSpeed legend shows ranges like "25-30 mph", not "2-20".
 - Histogram bars respond to clicks.
-- The popup reports only relevant traffic attributes.
+- The popup reports only relevant traffic attributes — no coordinates.
 - The interface feels like an internal municipal observation ledger.
 - The map does not appear to be a generic dark GIS dashboard.
 - The water reads as cold and near-black, not decorative.
 - The basemap reads as worn, not flat and digital.
 - All gray surfaces carry a cold bias — no warm taupe or brown-gray tones.
+- Mouse wheel zooms toward the cursor; drag pans; double-click resets.
+- The grab cursor is visible on the map field.
+- Hovering over a data point changes the cursor to an arrow.
+- Portland district labels, river labels, and bridge crossings are visible on the basemap.
+- The Columbia River appears as a water body at the north edge of the map.
+- Burnside Street is legible as a dashed reference line.
 
 ---
 
 ## 23. Negative Prompt
 
-Avoid neon colors, cyberpunk lighting, superhero logos, bat symbols, comic-book panels, glassmorphism, rounded cards, glossy gradients, fantasy architecture, Halloween themes, consumer dashboard aesthetics, traffic-light color schemes, rainbow ramps, excessive glow, decorative crime-scene tape, emoji markers, hover-only interpretation, warm neutral grays, decorative coastal water colors, and any basemap so dark that the point pattern becomes unreadable.
+Avoid neon colors, cyberpunk lighting, superhero logos, bat symbols, comic-book panels, glassmorphism, rounded cards, glossy gradients, fantasy architecture, Halloween themes, consumer dashboard aesthetics, traffic-light color schemes, rainbow ramps, excessive glow, decorative crime-scene tape, emoji markers, hover-only interpretation, warm neutral grays, decorative coastal water colors, quantile breaks that produce unreadable legend ranges, data outliers in the rendered dataset, and any basemap so dark or unlabeled that a reader cannot identify what part of Portland they are viewing.
 
 ---
 
