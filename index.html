@@ -928,6 +928,27 @@ window.addEventListener('mouseup', function() {
   mapContainer.classList.remove('dragging');
 });
 
+// ---- HOVER CURSOR ----
+mapContainer.addEventListener('mousemove', function(e) {
+  if (isDragging) return;
+  const rect = mapContainer.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const w = dataCanvas.width;
+  const h = dataCanvas.height;
+  const HIT_R = 10;
+
+  let hit = false;
+  for (let i = 0; i < RAW_DATA.length; i++) {
+    const d = RAW_DATA[i];
+    const [px, py] = lngLatToPixel(d.lng, d.lat, w, h);
+    const dx = px - mx;
+    const dy = py - my;
+    if (dx * dx + dy * dy < HIT_R * HIT_R) { hit = true; break; }
+  }
+  mapContainer.style.cursor = hit ? 'default' : '';
+});
+
 // Map click — point detection
 mapContainer.addEventListener('click', function(e) {
   if (dragMoved) { dragMoved = false; return; }
